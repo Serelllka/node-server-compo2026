@@ -9,8 +9,10 @@
 Приложения переводчика и практик fetch:
 https://serelllka-compo2026.sergey-slusarenko.chatgpt.site
 
-Самостоятельный переводчик без сборки клиентского кода:
+Переводчик с локальным словарём OpenRussian (45 646 словарных статей):
 https://serelllka.github.io/node-server-compo2026/
+Данные распространяются под CC BY-SA 4.0; источник, преобразования и полная
+лицензия указаны в `docs/DICTIONARY-LICENSE.txt`.
 
 `labs/fetch-server/` — переносимый сервер задания fetch на Node.js без зависимостей;
 для публичного HTTPS-адреса требуется серверный хостинг.
@@ -18,7 +20,7 @@ https://serelllka.github.io/node-server-compo2026/
 Проверки:
 
 ```sh
-node --test tests/solutions.test.cjs labs/filesystem/analyze.test.mjs
+node --test tests/solutions.test.cjs tests/static-translator.test.mjs labs/filesystem/analyze.test.mjs labs/fetch-server/server.test.mjs
 python3 -m http.server 8011 --bind 127.0.0.1
 ```
 
