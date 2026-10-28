@@ -6,8 +6,11 @@
 - `labs/filesystem/` — анализ `/data` в Docker, формат `311553-FILES-DIRECTORIES-SIZE`.
 - `labs/page-preview/` — веб-компонент `<page-preview>` и демонстрация.
 
-Приложения переводчика и практик fetch:
-https://serelllka-compo2026.sergey-slusarenko.chatgpt.site
+Практики fetch:
+https://serelllka-compo2026.sergey-slusarenko.chatgpt.site/practice
+
+Сервер задания fetch (`/login`, `/id/N`):
+https://serelllka-fetch-2026.vprogamervip.workers.dev/
 
 Переводчик с локальным словарём OpenRussian (45 646 словарных статей):
 https://serelllka.github.io/node-server-compo2026/
