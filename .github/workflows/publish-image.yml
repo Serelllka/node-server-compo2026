@@ -2,6 +2,9 @@ name: Publish filesystem lab
 
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/coursework]
+    paths: [.github/workflows/publish-image.yml]
 
 permissions:
   contents: read
