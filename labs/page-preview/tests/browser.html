@@ -1,0 +1,113 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>page-preview tests</title><pre id="results">Running…</pre>
+<script type="module">
+import { PagePreview } from '../src/page-preview.js';
+const output = document.querySelector('#results');
+const lines = [];
+const originalFetch = window.fetch;
+const requests = [];
+window.fetch = (url, options) => {
+  const request = { url, options };
+  requests.push(request);
+  // Deliberately ignore abort to prove stale responses cannot overwrite new data.
+  return new Promise((resolve, reject) => Object.assign(request, { resolve, reject }));
+};
+const assert = (value, message) => { if (!value) throw new Error(message); lines.push(`PASS ${message}`); };
+const waitStatus = (element, status) => new Promise((resolve, reject) => {
+  if (element.dataset.status === status) return resolve();
+  const observer = new MutationObserver(() => {
+    if (element.dataset.status !== status) return;
+    clearTimeout(timeout);
+    observer.disconnect();
+    resolve();
+  });
+  const timeout = setTimeout(() => {
+    observer.disconnect();
+    reject(new Error(`Timed out waiting for ${status}; got ${element.dataset.status}`));
+  }, 3000);
+  observer.observe(element, { attributes: true, attributeFilter: ['data-status'] });
+});
+const part = (element, name) => element.shadowRoot.querySelector(`[part="${name}"]`);
+const finish = async (request, html, element, status = 200) => {
+  let bodyRead;
+  const consumed = new Promise(resolve => { bodyRead = resolve; });
+  request.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    async text() { bodyRead(); return html; }
+  });
+  if (element) {
+    await waitStatus(element, status < 300 ? 'ready' : 'error');
+  } else {
+    // Stale/detached requests must finish consuming their body without a DOM change.
+    await consumed;
+    await Promise.resolve();
+  }
+};
+const make = src => {
+  const element = document.createElement('page-preview');
+  if (src !== undefined) element.setAttribute('src', src);
+  document.body.append(element);
+  return element;
+};
+try {
+  assert(customElements.get('page-preview') === PagePreview, 'root import registers class');
+  const first = make('../demo/example.html');
+  assert(requests.length === 1, 'one initial request');
+  assert(first.dataset.status === 'loading', 'loading state');
+  assert(first.shadowRoot?.mode === 'open', 'open shadow root');
+  await finish(requests[0], '<title>  A &amp; B  </title><h1>  First   heading  </h1><h1>Second</h1>', first);
+  assert(first.dataset.status === 'ready', 'ready state');
+  assert(part(first, 'title').textContent === 'A & B', 'title trim and entity decoding');
+  assert(part(first, 'heading').textContent === 'First   heading', 'first h1 and internal whitespace');
+  assert(part(first, 'link').href === new URL('../demo/example.html', location.href).href, 'relative URL');
+  assert(part(first, 'link').textContent === 'A & B' && part(first, 'link').getBoundingClientRect().height > 0, 'visible named link');
+  const second = make('../demo/empty.html');
+  await finish(requests.at(-1), '<p>Empty</p>', second);
+  assert(part(second, 'title').textContent === 'Название отсутствует' && part(second, 'heading').textContent === 'Заголовок отсутствует', 'missing metadata fallbacks');
+  assert(part(second, 'link').textContent === part(second, 'link').href, 'fallback URL link');
+  assert(part(first, 'title').textContent === 'A & B' && part(first, 'title') !== part(second, 'title'), 'independent template clones');
+  second.setAttribute('src', './blank');
+  await finish(requests.at(-1), '<title>  </title><h1> \n </h1>', second);
+  assert(part(second, 'title').textContent === 'Название отсутствует' && part(second, 'heading').textContent === 'Заголовок отсутствует', 'blank metadata fallbacks');
+  const missing = make();
+  assert(missing.dataset.status === 'error', 'missing src');
+  missing.setAttribute('src', ' ');
+  assert(missing.dataset.status === 'error', 'blank src');
+  first.setAttribute('src', './slow');
+  const slow = requests.at(-1);
+  first.setAttribute('src', './fast');
+  const fast = requests.at(-1);
+  assert(slow.options.signal.aborted, 'changed src aborts old request');
+  await finish(fast, '<title>Newest</title><h1>Newest heading</h1>', first);
+  await finish(slow, '<title>Stale</title>');
+  assert(part(first, 'title').textContent === 'Newest', 'late old response ignored');
+  first.setAttribute('src', './detached');
+  const detached = requests.at(-1);
+  first.remove();
+  await finish(detached, '<title>Detached</title>');
+  assert(detached.options.signal.aborted && first.dataset.status === 'loading' && part(first, 'title').textContent === '', 'removed instance ignores response');
+  document.body.append(first);
+  assert(requests.at(-1) !== detached, 'reconnect starts new request');
+  await finish(requests.at(-1), '<title>Reconnected</title><h1>&lt;img src=x onerror=alert(1)&gt;</h1>', first);
+  assert(first.dataset.status === 'ready' && part(first, 'title').textContent === 'Reconnected', 'reconnect works');
+  assert(part(first, 'heading').textContent === '<img src=x onerror=alert(1)>' && !first.shadowRoot.querySelector('img'), 'untrusted markup stays text');
+  first.setAttribute('src', './404');
+  await finish(requests.at(-1), '', first, 404);
+  assert(first.dataset.status === 'error', 'HTTP error');
+  first.setAttribute('src', './network-error');
+  requests.at(-1).reject(new TypeError('Network failure'));
+  await waitStatus(first, 'error');
+  assert(first.dataset.status === 'error', 'network error');
+  first.setAttribute('src', 'javascript:alert(1)');
+  assert(first.dataset.status === 'error' && !part(first, 'link').hasAttribute('href'), 'unsafe scheme has no clickable URL');
+  first.removeAttribute('src');
+  assert(first.dataset.status === 'error', 'removed src');
+  window.testResult = { passed: true, count: lines.length };
+} catch (error) {
+  lines.push(`FAIL ${error.stack}`);
+  window.testResult = { passed: false, error: error.message };
+} finally {
+  window.fetch = originalFetch;
+  output.textContent = lines.join('\n');
+}
+</script></html>

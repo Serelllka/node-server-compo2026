@@ -1,0 +1,23 @@
+name: Publish filesystem lab
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check filesystem contract
+        run: node --test labs/filesystem/analyze.test.mjs
+      - name: Publish image
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build --platform linux/amd64 --label org.opencontainers.image.source=https://github.com/Serelllka/node-server-compo2026 -t ghcr.io/serelllka/itmo-component-lab:311553 labs/filesystem
+          docker push ghcr.io/serelllka/itmo-component-lab:311553
