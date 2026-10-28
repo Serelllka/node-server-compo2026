@@ -9,6 +9,12 @@
 Приложения переводчика и практик fetch:
 https://serelllka-compo2026.sergey-slusarenko.chatgpt.site
 
+Самостоятельный переводчик без сборки клиентского кода:
+https://serelllka.github.io/node-server-compo2026/
+
+`labs/fetch-server/` — переносимый сервер задания fetch на Node.js без зависимостей;
+для публичного HTTPS-адреса требуется серверный хостинг.
+
 Проверки:
 
 ```sh
