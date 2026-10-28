@@ -2,6 +2,7 @@
   "name": "serelllka-page-preview",
   "version": "1.0.0",
   "description": "Browser custom element for previewing an HTML page",
+  "repository": {"type": "git", "url": "git+https://github.com/Serelllka/node-server-compo2026.git", "directory": "labs/page-preview"},
   "type": "module",
   "exports": "./src/page-preview.js",
   "files": ["src", "README.md"],

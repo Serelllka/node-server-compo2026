@@ -18,7 +18,7 @@ python3 -m http.server 8011 --bind 127.0.0.1
 
 Браузерные проверки компонента: `http://127.0.0.1:8011/labs/page-preview/tests/browser.html`.
 
-Docker-образ для сдачи после публикации и проверки публичного доступа:
+Опубликованный Docker-образ (анонимное скачивание и запуск проверены):
 `ghcr.io/serelllka/itmo-component-lab:311553`.
 
 Название npm-пакета до публикации: `serelllka-page-preview@1.0.0`.
