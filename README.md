@@ -16,11 +16,12 @@ https://serelllka.github.io/node-server-compo2026/
 
 `labs/fetch-server/` — переносимый сервер задания fetch на Node.js без зависимостей;
 для публичного HTTPS-адреса требуется серверный хостинг.
+`labs/fetch-worker/` — готовый вариант для бесплатного Cloudflare Workers.
 
 Проверки:
 
 ```sh
-node --test tests/solutions.test.cjs tests/static-translator.test.mjs labs/filesystem/analyze.test.mjs labs/fetch-server/server.test.mjs
+node --test tests/solutions.test.cjs tests/static-translator.test.mjs labs/filesystem/analyze.test.mjs labs/fetch-server/server.test.mjs labs/fetch-worker/worker.test.mjs
 python3 -m http.server 8011 --bind 127.0.0.1
 ```
 
