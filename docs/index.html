@@ -15,7 +15,7 @@
     input:focus { outline: 3px solid #648c70; outline-offset: 3px; }
     h1 { min-height: 72px; margin: 12px 0; font-size: 48px; overflow-wrap: break-word; }
     .output { margin-top: 40px; border-top: 1px solid #bac2b7; padding-top: 24px; }
-    .caption, #status, footer { font-size: 14px; color: #526957; }
+    .caption, #status { font-size: 14px; color: #526957; }
     [aria-invalid="true"] { border-color: #a53a2b; }
   </style>
 </head>
@@ -28,10 +28,12 @@
       <div class="output">
         <p class="caption">English</p>
         <h1 id="translation" lang="ru" aria-live="polite">Перевод</h1>
-        <p id="status" role="status">Перевод появляется автоматически при вводе.</p>
+        <p id="status" role="status">Загружаем словарь…</p>
+        <p class="caption">Словарь <a href="https://en.openrussian.org/">OpenRussian</a> ·
+          <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a> ·
+          <a href="DICTIONARY-LICENSE.txt">Источник и лицензия</a></p>
       </div>
     </section>
-    <footer>Перевод предоставлен MyMemory.</footer>
   </main>
   <script>
     (function () {
@@ -39,83 +41,67 @@
       var input = document.getElementById('word');
       var output = document.getElementById('translation');
       var status = document.getElementById('status');
-      var revision = 0;
-      var previous = '';
-      var timer;
-      var request;
+      var dictionary = null;
+      var loadError = '';
 
       function update() {
-        var word = input.value.trim();
-        if (word === previous) return;
-        previous = word;
-        var version = ++revision;
-        clearTimeout(timer);
-        if (request) request.abort();
-        request = null;
+        var word = input.value.trim().toLocaleLowerCase('ru').normalize('NFC');
         output.textContent = 'Перевод';
         output.lang = 'ru';
         input.setAttribute('aria-invalid', 'false');
-        status.textContent = 'Перевод появляется автоматически при вводе.';
-        if (!word) return;
-
-        function fail(message) {
-          if (version !== revision) return;
-          status.textContent = message;
-          input.setAttribute('aria-invalid', 'true');
-        }
-
-        if (new TextEncoder().encode(word).length > 500) {
-          fail('Введите текст длиной до 500 байт UTF-8.');
+        if (loadError) {
+          status.textContent = loadError;
           return;
         }
-        status.textContent = 'Переводим…';
-        timer = setTimeout(function () {
-          var xhr = new XMLHttpRequest();
-          request = xhr;
-          xhr.open('GET', 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(word) + '&langpair=ru%7Cen');
-          xhr.timeout = 12000;
-          xhr.onload = function () {
-            if (version !== revision) return;
-            if (xhr.status < 200 || xhr.status >= 300) {
-              fail('Сервис перевода недоступен. Попробуйте позже.');
-              return;
-            }
-            try {
-              var data = JSON.parse(xhr.responseText);
-              if (data && data.quotaFinished) {
-                fail('Лимит сервиса перевода исчерпан. Попробуйте позже.');
-                return;
-              }
-              var translated = data && data.responseData && data.responseData.translatedText;
-              var matches = data && data.matches;
-              if (Array.isArray(matches)) {
-                for (var i = 0; i < matches.length; i++) {
-                  var entry = matches[i];
-                  if (entry && entry.match === 1 && entry.segment === word && entry['created-by'] === 'Wikipedia'
-                      && typeof entry.translation === 'string' && entry.translation.trim()) {
-                    translated = entry.translation;
-                    break;
-                  }
-                }
-              }
-              if (!data || Number(data.responseStatus) !== 200 || typeof translated !== 'string' || !translated.trim()) {
-                throw new Error('Invalid translation');
-              }
-              output.textContent = translated.trim();
-              output.lang = 'en';
-              status.textContent = 'Перевод готов.';
-            } catch (error) {
-              fail('Не удалось получить перевод. Попробуйте позже.');
-            }
-          };
-          xhr.onerror = function () { fail('Сервис перевода недоступен. Проверьте подключение.'); };
-          xhr.ontimeout = function () { fail('Сервис перевода не ответил вовремя. Попробуйте позже.'); };
-          xhr.send();
-        }, 250);
+        if (!dictionary) {
+          status.textContent = 'Загружаем словарь…';
+          return;
+        }
+        if (!word) {
+          status.textContent = 'Введите слово на русском.';
+          return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(dictionary, word)) {
+          status.textContent = 'Слово не найдено в словаре. Проверьте написание и начальную форму.';
+          input.setAttribute('aria-invalid', 'true');
+          return;
+        }
+        output.textContent = dictionary[word];
+        output.lang = 'en';
+        status.textContent = 'Перевод готов.';
+      }
+
+      function fail() {
+        loadError = 'Не удалось загрузить словарь. Проверьте подключение и обновите страницу.';
+        update();
       }
 
       input.addEventListener('input', update);
       input.addEventListener('change', update);
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'dictionary.json');
+      xhr.timeout = 30000;
+      xhr.onload = function () {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          fail();
+          return;
+        }
+        try {
+          var data = JSON.parse(xhr.responseText);
+          if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid dictionary');
+          var keys = Object.keys(data);
+          if (!keys.length || !keys.every(function (key) {
+            return typeof data[key] === 'string' && data[key].trim();
+          })) throw new Error('Invalid dictionary entry');
+          dictionary = data;
+          update();
+        } catch (error) {
+          fail();
+        }
+      };
+      xhr.onerror = fail;
+      xhr.ontimeout = fail;
+      xhr.send();
     }());
   </script>
 </body>

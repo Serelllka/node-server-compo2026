@@ -14,13 +14,10 @@ function setup() {
   const status = {};
   const elements = { word: input, translation: output, status };
   const requests = [];
-  const timers = new Map();
-  let nextTimer = 0;
   class XHR {
     constructor() { requests.push(this); }
     open(method, url) { this.method = method; this.url = url; }
     send() { this.sent = true; }
-    abort() { this.aborted = true; }
     respond(data, status = 200) {
       this.status = status;
       this.responseText = typeof data === 'string' ? data : JSON.stringify(data);
@@ -28,91 +25,101 @@ function setup() {
     }
   }
   runInNewContext(script, {
-    document: { getElementById: id => elements[id] }, TextEncoder, XMLHttpRequest: XHR,
-    setTimeout: (callback) => { timers.set(++nextTimer, callback); return nextTimer; },
-    clearTimeout: id => timers.delete(id),
+    document: { getElementById: id => elements[id] }, XMLHttpRequest: XHR,
   });
   return {
     input, output, status, requests, attributes,
     event(word, type = 'input') { input.value = word; handlers[type](); },
-    flush() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(callback => callback()); },
   };
 }
 
-test('standalone page has the required native elements and input/change events translate safely', () => {
+test('page loads one relative dictionary and both native events perform local lookup', () => {
   assert.match(html, /<title>serelllka<\/title>/);
   assert.equal((html.match(/<input\b/g) || []).length, 1);
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
+  assert.match(html, /https:\/\/en.openrussian.org\//);
+  assert.match(html, /https:\/\/creativecommons.org\/licenses\/by-sa\/4.0\//);
   for (const event of ['input', 'change']) {
     const app = setup();
-    app.event('  кошка  ', event);
-    app.flush();
     const request = app.requests[0];
-    const url = new URL(request.url);
+    assert.equal(app.requests.length, 1);
     assert.equal(request.method, 'GET');
+    assert.equal(request.url, 'dictionary.json');
     assert.equal(request.sent, true);
-    assert.equal(url.origin + url.pathname, 'https://api.mymemory.translated.net/get');
-    assert.equal(url.searchParams.get('q'), 'кошка');
-    assert.equal(url.searchParams.get('langpair'), 'ru|en');
-    assert.equal(request.timeout, 12000);
-    request.respond({ responseStatus: 200, responseData: { translatedText: 'cat' } });
+    assert.equal(request.timeout, 30000);
+    request.respond({ 'кошка': 'cat', 'дом': 'house' });
+    app.event('  КОШКА  ', event);
     assert.equal(app.output.textContent, 'cat');
     assert.equal(app.output.lang, 'en');
     assert.equal(app.attributes['aria-invalid'], 'false');
-    app.event('кошка', 'change');
-    app.flush();
+    app.event('дом', event);
+    assert.equal(app.output.textContent, 'house');
     assert.equal(app.requests.length, 1);
-    assert.equal(app.output.textContent, 'cat');
   }
 });
 
-test('new input aborts prior requests and stale responses cannot overwrite output or errors', () => {
+test('async dictionary load translates latest input and never restores stale or cleared input', () => {
   const app = setup();
-  app.event('кошка'); app.flush();
-  const first = app.requests[0];
-  app.event('дом'); app.flush();
-  assert.equal(first.aborted, true);
-  app.requests[1].respond({ responseStatus: 200, responseData: { translatedText: 'house' } });
-  first.respond({ responseStatus: 200, responseData: { translatedText: 'cat' } });
-  first.onerror();
+  app.event('кошка');
+  assert.match(app.status.textContent, /Загружаем/);
+  app.event('дом');
+  app.requests[0].respond({ 'кошка': 'cat', 'дом': 'house' });
   assert.equal(app.output.textContent, 'house');
-  assert.equal(app.attributes['aria-invalid'], 'false');
   app.event('');
-  assert.equal(app.requests[1].aborted, true);
   assert.equal(app.output.textContent, 'Перевод');
+  assert.equal(app.output.lang, 'ru');
+  assert.match(app.status.textContent, /Введите/);
+
+  const cleared = setup();
+  cleared.event('кошка');
+  cleared.event('');
+  cleared.requests[0].respond({ 'кошка': 'cat' });
+  assert.equal(cleared.output.textContent, 'Перевод');
 });
 
-test('byte limit, HTTP, malformed data, quota, network and timeout failures show errors', () => {
-  const oversized = setup();
-  oversized.event('я'.repeat(251)); oversized.flush();
-  assert.equal(oversized.requests.length, 0);
-  assert.match(oversized.status.textContent, /500/);
+test('missing words do not leak inherited properties; NFC and English case are preserved', () => {
+  const app = setup();
+  app.requests[0].respond({ 'ёлка': 'fir tree', 'я': 'I', 'англия': 'England' });
+  for (const word of ['неизвестно', 'constructor', '__proto__']) {
+    app.event(word);
+    assert.equal(app.output.textContent, 'Перевод');
+    assert.equal(app.attributes['aria-invalid'], 'true');
+    assert.match(app.status.textContent, /не найдено/);
+  }
+  app.event('Е\u0308ЛКА');
+  assert.equal(app.output.textContent, 'fir tree');
+  assert.equal(app.attributes['aria-invalid'], 'false');
+  app.event('я');
+  assert.equal(app.output.textContent, 'I');
+  app.event('АНГЛИЯ');
+  assert.equal(app.output.textContent, 'England');
+});
+
+test('HTTP, malformed dictionary, network and timeout failures show an actionable error', () => {
   for (const fail of [
     xhr => xhr.respond({}, 503),
     xhr => xhr.respond('{bad json'),
-    xhr => xhr.respond({ quotaFinished: true }),
-    xhr => xhr.respond({ responseStatus: 403, responseData: { translatedText: 'error' } }),
-    xhr => xhr.respond({ responseStatus: 200, responseData: { translatedText: ' ' } }),
     xhr => xhr.respond(null),
+    xhr => xhr.respond([]),
+    xhr => xhr.respond({}),
+    xhr => xhr.respond({ 'кошка': 7 }),
+    xhr => xhr.respond({ 'кошка': ' ' }),
     xhr => xhr.onerror(),
     xhr => xhr.ontimeout(),
   ]) {
-    const app = setup(); app.event('кошка'); app.flush(); fail(app.requests[0]);
+    const app = setup(); app.event('кошка'); fail(app.requests[0]);
     assert.equal(app.output.textContent, 'Перевод');
-    assert.equal(app.attributes['aria-invalid'], 'true');
-    assert.notEqual(app.status.textContent, 'Переводим…');
+    assert.match(app.status.textContent, /Не удалось загрузить словарь/);
+    app.event('дом');
+    assert.match(app.status.textContent, /обновите страницу/);
+    assert.equal(app.requests.length, 1);
   }
 });
 
-test('exact curated API entry is used, and HTML-like response remains plain text', () => {
-  const app = setup(); app.event('солнце'); app.flush();
-  app.requests[0].respond({ responseStatus: 200, responseData: { translatedText: 'solnce' }, matches: [
-    { match: 1, segment: 'другое', 'created-by': 'Wikipedia', translation: 'wrong' },
-    { match: 1, segment: 'солнце', 'created-by': 'Wikipedia', translation: 'Sun' },
-  ] });
-  assert.equal(app.output.textContent, 'Sun');
-  app.event('тег'); app.flush();
-  app.requests[1].respond({ responseStatus: 200, responseData: { translatedText: '<b>text</b>' } });
-  assert.equal(app.output.textContent, '<b>text</b>');
+test('HTML-like dictionary entries are inserted as plain text', () => {
+  const app = setup();
+  app.requests[0].respond({ 'тег': '<img src=x onerror=alert(1)>' });
+  app.event('тег');
+  assert.equal(app.output.textContent, '<img src=x onerror=alert(1)>');
   assert.equal(app.output.innerHTML, undefined);
 });
